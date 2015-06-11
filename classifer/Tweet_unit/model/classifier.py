@@ -1,16 +1,15 @@
 # coding=utf-8
 
-from utils import loadLabels
-from utils import getTweets
-from utils import TestTweets
+from utils import *
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm.classes import LinearSVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model.logistic import LogisticRegression
+from model import *
 
 from pandas import *
-
+import pickle
 
 def buildMatrixTrain(tweet_list, tweet_label_list):
     corpus = []
@@ -28,8 +27,7 @@ def buildMatrixTrain(tweet_list, tweet_label_list):
             y.append('-')
     vectorizer = TfidfVectorizer()
     X = vectorizer.fit_transform(corpus)
-    return X, y
-
+    return X, y, vectorizer
 
 
 def buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet):
@@ -59,11 +57,22 @@ def buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet):
     print len(corpus)
     vectorizer = TfidfVectorizer()
     X = vectorizer.fit_transform(corpus)
-    #fnames = vectorizer.get_feature_names()
-    #for x in fnames:
-    #    print x
     return X, y, tweet_id_list
 
+
+def buildCorpusTest(all_tweet):
+    corpus = []
+    tweet_id_list = []
+    for tweetid in all_tweet:
+        document = ''.join(all_tweet[tweetid])
+        try:
+            corpus.append(document.decode('utf-8', 'ignore'))
+            tweet_id_list.append(tweetid)
+        except:
+            print document
+            continue
+    print "number of tweets reading in is ", len(corpus)
+    return corpus,tweet_id_list
 
 def splitTrainTest(X, y, start, end):
     import scipy.sparse as sp
@@ -151,25 +160,26 @@ def plotResults(model_names, res_list):
     ind = np.arange(N)  # the x locations for the groups
     width = 0.15       # the width of the bars
     fig, ax = plt.subplots(1,1, figsize=(20,10))
-    rects1 = ax.bar(ind, res_list[0], width, color='red')
-    rects2 = ax.bar(ind+width*1, res_list[1], width, color='green')
-    rects3 = ax.bar(ind+width*2, res_list[2], width, color='blue')
+    rects1 = ax.bar(ind, res_list[0], width, color='royalblue')
+    rects2 = ax.bar(ind+width*1, res_list[1], width, color='lightcoral')
 
+    ax.set_axis_bgcolor('lightgrey')
     ax.set_xlabel('Evaluation Statistics')
     ax.set_ylabel('Value')
     ax.set_title('Model Comparison of LCC',fontsize=18)
     ax.set_xticks(ind+width)
     ax.set_xticklabels(('Accuracy', 'Precision', 'Recall', 'F1') )
-    ax.set_ylim(0.50,1)
-    ax.legend( (rects1[0], rects2[0], rects3[0]), model_names, fancybox=True)
+    ax.set_ylim(0.75,1)
+    ax.legend( (rects1[0], rects2[0]), model_names, fancybox=True)
     plt.show()
 
 
-def compareModel(user_tweets, user_vote_label):
-    model_names = ('NaiveBayes', 'LogisticRegression', 'SVM')
+def compareModel(tweet_list, tweet_label_list):
+    model_names = ('LogisticRegression', 'SVM')
     res_list = []
+    result = []
 
-    X, y = buildMatrixTrain(user_tweets, user_vote_label)
+    X, y = buildMatrixTrain(tweet_list, tweet_label_list)
     print 'dimension of entire data matrix : \t', X.shape, len(y)
 
     for model_name in model_names:
@@ -179,35 +189,65 @@ def compareModel(user_tweets, user_vote_label):
     plotResults(model_names, res_list)
 
 
-def applyModel(tweet_list, tweet_label_list, all_tweet,filename):
+def applyModel(tweet_list, tweet_label_list,all_tweet,model_name,filename):
     X, y, tweet_id_list= buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet)
-    print X.shape, len(y)
     X_train = X[:len(y),:]
     y_train = y
     X_test =  X[len(y):,:]
     tweet_id_list_test = tweet_id_list[len(y):]
-    print X_train.shape, X_test.shape
-    clf = LinearSVC(penalty="l1", dual=False, tol=1e-7)
-    clf.fit(X_train, y_train)
+    #print "number of training tweets are ", X_train.shape, len(y_train)
+    if model_name == 'SVM':
+        clf = LinearSVC(penalty="l1", dual=False, tol=1e-7)
+        clf.fit(X_train, y_train)
+    elif model_name == 'NaiveBayes':
+        clf = GaussianNB()
+        clf.fit(X_train.todense(), y_train)
+    elif model_name == 'LogisticRegression':
+        clf = LogisticRegression(C=1.0, penalty='l1', tol=0.01)
+        clf.fit(X_train.toarray(), y_train)
+    else:
+        raise Exception("The model name is incorrect!!!")
+
     y_pred = clf.predict(X_test)
-    with open(path1+filename+'_c.csv','w') as fp:
+    with open(RESULT_FOLDER+'/'+filename+'_c.csv','wb') as fp:
+        writer = csv.writer(fp, delimiter =",",quoting=csv.QUOTE_MINIMAL)
         for i, tweetid in enumerate(tweet_id_list_test):
-            fp.write(tweetid +','+ y_pred[i]+'\n')
+            writer.writerow([tweetid, all_tweet[tweetid], y_pred[i]])
 
+def runandsaveModel(tweet_list, tweet_label_list,model_name):
+    X, y, vectorizer= buildMatrixTrain(tweet_list, tweet_label_list)
 
-path1 = 'C:/Users/yshi31/Documents/LCC/classifer/classifer_relevant/result/'
-path2 = 'H:/Data/RawData_csv/GNIP/Twitterhistoricalpowertrack/201410_LCC/'
-#filelist = ['tw2014_10_01','tw2014_10_01_supp.json','tw2014_10_02','tw2014_10_02_supp.json','tw2014_10_03','tw2014_10_03_supp.json','tw2014_10_04','tw2014_10_04_supp.json','tw2014_10_05','tw2014_10_05_supp.json','tw2014_10_06','tw2014_10_06_supp.json','tw2014_10_07','tw2014_10_07_supp.json','tw2014_10_08','tw2014_10_09','tw2014_10_10','tw2014_10_11','tw2014_10_12','tw2014_10_13','tw2014_10_14','tw2014_10_15','tw2014_10_16','tw2014_10_17','tw2014_10_18','tw2014_10_19','tw2014_10_20','tw2014_10_21','tw2014_10_22','tw2014_10_23','tw2014_10_24','tw2014_10_25','tw2014_10_26','tw2014_10_27','tw2014_10_28','tw2014_10_29','tw2014_10_30','tw2014_10_31','tw_blunt_2014_10_01','tw_blunt_2014_10_02','tw_blunt_2014_10_03','tw_blunt_2014_10_04','tw_blunt_2014_10_05','tw_blunt_2014_10_06','tw_blunt_2014_10_07']
-#filelist = ['tw_lccoriginal_2014_10_02','tw_lccoriginal_2014_10_03','tw_lccoriginal_2014_10_04','tw_lccoriginal_2014_10_05','tw_lccoriginal_2014_10_06','tw_lccoriginal_2014_10_07']
-#filelist = ['tw2014_10_01','tw2014_10_02','tw2014_10_03','tw2014_10_04','tw2014_10_05','tw2014_10_06','tw2014_10_07','tw2014_10_08','tw2014_10_09','tw2014_10_10','tw2014_10_11','tw2014_10_12','tw2014_10_13','tw2014_10_14','tw2014_10_15','tw2014_10_16','tw2014_10_17','tw2014_10_18','tw2014_10_19','tw2014_10_20','tw2014_10_21','tw2014_10_22','tw2014_10_23','tw2014_10_24','tw2014_10_25','tw2014_10_26','tw2014_10_27','tw2014_10_28','tw2014_10_29','tw2014_10_30','tw2014_10_31']
-tweet_label_list = loadLabels('sample_label')  #import tweets and according labels
-tweet_list = getTweets('sample_label')
-print(len(tweet_list))
-#for fileId in filelist:
- #   all_tweet = TestTweets(path2,fileId)
-  #  applyModel(tweet_list, tweet_label_list, all_tweet,fileId)
-all_tweet = TestTweets('H:/Data/RawData_csv/GNIP/Twitterhistoricalpowertrack/201410_LCC/','tw_lccoriginal_2014_10_01')
-print(len(all_tweet))
-#applyModel(tweet_list, tweet_label_list, all_tweet,'tw_lccoriginal_2014_10_01')
-#X, y, tweet_id_list= buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet)
-#print X.shape, len(y)
+    print "number of training tweets are ", X.shape, len(y)
+
+    #trainning the model
+    if model_name == 'SVM':
+        clf = LinearSVC(penalty="l1", dual=False, tol=1e-7)
+        clf.fit(X, y)
+    elif model_name == 'NaiveBayes':
+        clf = GaussianNB()
+        clf.fit(X.todense(), y)
+    elif model_name == 'LogisticRegression':
+        clf = LogisticRegression(C=1.0, penalty='l1', tol=0.01)
+        clf.fit(X.toarray(), y)
+    else:
+        raise Exception("The model name is incorrect!!!")
+
+    #save the model
+    model = Model(model_name, clf, vectorizer)
+    with open(RESULT_FOLDER+"/"+model_name+"_model.m","wb") as pf:
+        pickle.dump(model,pf)
+    print model_name, "is saved at", RESULT_FOLDER+"/"+model_name+"_model.m"
+
+def applyModel(model_name,test_corpus,tweet_id_list,filename):
+    with open(RESULT_FOLDER+"/"+model_name+"_model.m","rb") as pf:
+        model = pickle.load(pf)
+    print "prediction results "
+    featured_test_data = model.vectorizer.transform(test_corpus)
+    y_pred = model.classifier.predict(featured_test_data)
+    print y_pred
+    with open(RESULT_FOLDER+'/'+filename+'_c.csv','wb') as fp:
+        writer = csv.writer(fp, delimiter =",",quoting=csv.QUOTE_MINIMAL)
+        for i, tweetid in enumerate(tweet_id_list):
+            writer.writerow([tweetid, y_pred[i]])
+
+if __name__ == '__main__':
