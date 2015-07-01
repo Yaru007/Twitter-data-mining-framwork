@@ -6,10 +6,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm.classes import LinearSVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model.logistic import LogisticRegression
-from model import *
-
+import os
 from pandas import *
 import pickle
+import glob
+
+import os
 
 def buildMatrixTrain(tweet_list, tweet_label_list):
     corpus = []
@@ -22,9 +24,9 @@ def buildMatrixTrain(tweet_list, tweet_label_list):
             #print document
             continue
         if tweet_label_list[tweetid] == '1':
-            y.append('+')
+            y.append(1)
         else:
-            y.append('-')
+            y.append(0)
     vectorizer = TfidfVectorizer()
     X = vectorizer.fit_transform(corpus)
     return X, y, vectorizer
@@ -43,9 +45,9 @@ def buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet):
             print document
             continue
         if tweet_label_list[tweetid] == '1':
-            y.append('+')
+            y.append(1)
         else:
-            y.append('-')
+            y.append(0)
     for tweetid in all_tweet:
         document = ''.join(all_tweet[tweetid])
         try:
@@ -54,10 +56,10 @@ def buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet):
         except:
             #print document
             continue
-    print len(corpus)
+    #print len(corpus)
     vectorizer = TfidfVectorizer()
     X = vectorizer.fit_transform(corpus)
-    return X, y, tweet_id_list
+    return X, y, tweet_id_list#, vectorizer
 
 
 def buildCorpusTest(all_tweet):
@@ -189,13 +191,13 @@ def compareModel(tweet_list, tweet_label_list):
     plotResults(model_names, res_list)
 
 
-def applyModel(tweet_list, tweet_label_list,all_tweet,model_name,filename):
-    X, y, tweet_id_list= buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet)
+def applyModelandfit(tweet_list, tweet_label_list,all_tweet,model_name,filename):
+    X, y, tweet_id_list = buildMatrixTrainAndTest(tweet_list, tweet_label_list, all_tweet)
     X_train = X[:len(y),:]
     y_train = y
     X_test =  X[len(y):,:]
     tweet_id_list_test = tweet_id_list[len(y):]
-    #print "number of training tweets are ", X_train.shape, len(y_train)
+    print "number of training tweets are ", X_train.shape, len(y_train)
     if model_name == 'SVM':
         clf = LinearSVC(penalty="l1", dual=False, tol=1e-7)
         clf.fit(X_train, y_train)
@@ -209,6 +211,7 @@ def applyModel(tweet_list, tweet_label_list,all_tweet,model_name,filename):
         raise Exception("The model name is incorrect!!!")
 
     y_pred = clf.predict(X_test)
+    print 'length of predict data is ', len(y_pred)
     with open(RESULT_FOLDER+'/'+filename+'_c.csv','wb') as fp:
         writer = csv.writer(fp, delimiter =",",quoting=csv.QUOTE_MINIMAL)
         for i, tweetid in enumerate(tweet_id_list_test):
@@ -238,16 +241,26 @@ def runandsaveModel(tweet_list, tweet_label_list,model_name):
         pickle.dump(model,pf)
     print model_name, "is saved at", RESULT_FOLDER+"/"+model_name+"_model.m"
 
-def applyModel(model_name,test_corpus,tweet_id_list,filename):
+def applyModel(model_name,all_tweet,filename):
+    all_tweet_corpus,all_tweet_id_list = buildCorpusTest(all_tweet)
     with open(RESULT_FOLDER+"/"+model_name+"_model.m","rb") as pf:
         model = pickle.load(pf)
     print "prediction results "
-    featured_test_data = model.vectorizer.transform(test_corpus)
+    featured_test_data = model.vectorizer.transform(all_tweet_corpus)
     y_pred = model.classifier.predict(featured_test_data)
-    print y_pred
-    with open(RESULT_FOLDER+'/'+filename+'_c.csv','wb') as fp:
-        writer = csv.writer(fp, delimiter =",",quoting=csv.QUOTE_MINIMAL)
-        for i, tweetid in enumerate(tweet_id_list):
-            writer.writerow([tweetid, y_pred[i]])
+    print sum(y_pred)
+    # with open(RESULT_FOLDER+'/'+filename+'_c_2.csv','wb') as fp:
+    #     writer = csv.writer(fp, delimiter =",",quoting=csv.QUOTE_MINIMAL)
+    #     for i, tweetid in enumerate(all_tweet_id_list):
+    #         writer.writerow([tweetid, all_tweet[tweetid],y_pred[i]])
+    #save all the postive result
+    with open(RESULT_FOLDER+'/'+'postive.csv','a',delimiter=',', lineterminator='\n',) as file:
+        writer = csv.writer(file, delimiter =",",quoting=csv.QUOTE_MINIMAL)
+        for i, tweetid in enumerate(all_tweet_id_list):
+            if y_pred[i] == 1:
+               writer.writerow([tweetid, all_tweet[tweetid],y_pred[i]])
 
 if __name__ == '__main__':
+
+
+
